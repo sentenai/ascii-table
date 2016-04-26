@@ -1,0 +1,7 @@
+resolver: lts-5.13
+packages:
+  - .
+  - location:
+      git: git@github.com:Sentenai/sentenai-prelude.git
+      commit: 451274e
+    extra-dep: true

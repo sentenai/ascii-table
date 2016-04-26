@@ -1,0 +1,28 @@
+name: data-ascii-table
+version: 0.1.0.0
+synopsis: ASCII table
+description: ASCII table
+github: Sentenai/data-ascii-table
+license: BSD3
+author: Sentenai
+maintainer: mitchellwrosen@gmail.com
+copyright: 2016 Sentenai
+
+ghc-options: -Wall
+
+default-extensions:
+  - NoImplicitPrelude
+
+dependencies:
+  - aeson
+  - base
+  - containers
+  - dlist
+  - sentenai-prelude
+  - text
+  - unordered-containers
+  - vector
+  - wl-pprint-extras
+
+library:
+  source-dirs: src

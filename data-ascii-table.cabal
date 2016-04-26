@@ -1,0 +1,39 @@
+-- This file has been generated from package.yaml by hpack version 0.9.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           data-ascii-table
+version:        0.1.0.0
+synopsis:       ASCII table
+description:    ASCII table
+homepage:       https://github.com/Sentenai/data-ascii-table#readme
+bug-reports:    https://github.com/Sentenai/data-ascii-table/issues
+author:         Sentenai
+maintainer:     mitchellwrosen@gmail.com
+copyright:      2016 Sentenai
+license:        BSD3
+build-type:     Simple
+cabal-version:  >= 1.10
+
+source-repository head
+  type: git
+  location: https://github.com/Sentenai/data-ascii-table
+
+library
+  hs-source-dirs:
+      src
+  default-extensions: NoImplicitPrelude
+  ghc-options: -Wall
+  build-depends:
+      aeson
+    , base
+    , containers
+    , dlist
+    , sentenai-prelude
+    , text
+    , unordered-containers
+    , vector
+    , wl-pprint-extras
+  exposed-modules:
+      Data.AsciiTable
+  default-language: Haskell2010
