@@ -1,4 +1,4 @@
-{-# LANGUAGE InstanceSigs        #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -8,7 +8,6 @@ module Data.AsciiTable
   , TableRow
   , TableSlice
   , TableElem(..)
-  , NamedObject(..)
   , makeTable
     -- * Re-exports
   , Doc
@@ -39,7 +38,7 @@ import qualified Data.Vector            as Vector
 
 {-
 
-   Example table:
+   Table terminology:
 
    +-------------+-------------+--------
    | SliceHdr    | SliceHdr    |
@@ -69,9 +68,18 @@ import qualified Data.Vector            as Vector
 
 -}
 
-type TableRow      a = [a]
-type TableSlice    a = [TableRow a]
+-- | A single horizontal row of a 'Table', containing a list of 'TableElem's.
+-- Each element in the row is visually separated from the next by a vertical
+-- line. Each row in the table must contain the same number of elements.
+type TableRow   a = [a]
 
+-- | A single horizontal slice of a 'Table', containing one or more 'TableRow's.
+-- Each slice is visually separated from the next by a horizontal line.
+type TableSlice a = [TableRow a]
+
+-- | An opaque data type with a 'Pretty' instance, for printing to a console.
+-- Build a table with 'makeTable', and show it with the pretty-printing
+-- functions re-exported from this module.
 data Table = Table
   { tableHeaders     :: [Text]
   , tableCellHeaders :: [[Text]]
@@ -79,7 +87,6 @@ data Table = Table
   } deriving (Eq, Show)
 
 instance Pretty Table where
-  pretty :: Table -> Doc e
   pretty table =
     let
       widths = tableWidths table
@@ -159,23 +166,13 @@ instance Pretty Table where
     elemWidth = foldr (\x y -> x+y+1) (-1)
 
 
+-- | The class of types that correspond to a single element of a 'Table'. An
+-- instance for an @aeson@ 'Object' is provided by this library.
 class TableElem a where
-  tableElemHeader :: a -> Text
   tableElemCells :: a -> HashMap Text Text
 
-  tableElemCellHeaders :: a -> Set Text
-  tableElemCellHeaders = Set.fromList . HashMap.keys . tableElemCells
-
-
-data NamedObject = NamedObject Text Object
-  deriving (Eq, Show)
-
-instance TableElem NamedObject where
-  tableElemHeader :: NamedObject -> Text
-  tableElemHeader (NamedObject name _) = name
-
-  tableElemCells :: NamedObject -> HashMap Text Text
-  tableElemCells (NamedObject _ obj) = HashMap.fromList (DList.toList (objectCells obj))
+instance TableElem (HashMap Text Value) where
+  tableElemCells obj = HashMap.fromList (DList.toList (objectCells obj))
    where
     objectCells :: Object -> DList (Text, Text)
     objectCells = foldl' step mempty . HashMap.toList
@@ -219,16 +216,34 @@ instance TableElem NamedObject where
       showValue Null       = "null"
 
 
-makeTable :: forall a. TableElem a => [TableSlice a] -> Table
-makeTable slices =
+-- | Make a 'Table' from a list of headers and a list of 'TableSlice's, each of
+-- which contains a list of 'TableRow's, each of which contain a list of
+-- 'TableElem's. It is assumed that all dimensions align properly (e.g. each row
+-- contains the same number of elements, which is equal to the length of the
+-- list of headers).
+--
+-- Each vertically aligned element need not contain the same set of keys; for
+-- example, the table corresponding to
+--
+-- @
+-- [ {\"foo\": \"bar\"}, {\"baz\": \"qux\"} ]
+-- @
+--
+-- will simply look like
+--
+-- @
+-- +-------------+
+-- | foo   baz   |
+-- +=============+
+-- | \"bar\"       |
+-- |       \"qux\" |
+-- +-------------+
+-- @
+--
+-- That is, each missing value is simply not displayed.
+makeTable :: forall a. TableElem a => [Text] -> [TableSlice a] -> Table
+makeTable headers slices =
   let
-    headers :: [Text]
-    headers
-      | Just slice <- head slices
-      , Just row   <- head slice
-        = map tableElemHeader row
-      | otherwise = []
-
     cell_headers :: [[Text]]
     cell_headers =
       let
