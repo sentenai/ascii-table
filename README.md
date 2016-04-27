@@ -1,1 +1,1 @@
-[Documentation](sentenai.github.io/data-ascii-table) (ignore the Sentenai.Prelude docs)
+[Documentation](https://sentenai.github.io/data-ascii-table) (ignore the Sentenai.Prelude docs)
