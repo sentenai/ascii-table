@@ -6,19 +6,15 @@ github: Sentenai/data-ascii-table
 license: BSD3
 author: Sentenai
 maintainer: mitchellwrosen@gmail.com
-copyright: 2016 Sentenai
+copyright: 2016 Sentenai, Inc.
 
 ghc-options: -Wall
-
-default-extensions:
-  - NoImplicitPrelude
 
 dependencies:
   - aeson
   - base
   - containers
   - dlist
-  - sentenai-prelude
   - text
   - unordered-containers
   - vector

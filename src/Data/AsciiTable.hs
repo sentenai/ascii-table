@@ -50,17 +50,21 @@ module Data.AsciiTable
   , displayIO
   ) where
 
-import Sentenai.Prelude
-
 import Data.Aeson            (Object, Value(..))
 import Data.DList            (DList)
+import Data.Foldable         (foldl')
 import Data.HashMap.Strict   (HashMap)
+import Data.List             (transpose)
+import Data.Monoid           ((<>))
+import Data.Set              (Set)
+import Data.Text             (Text)
 import Text.PrettyPrint.Free hiding ((<>))
 
 import qualified Data.DList             as DList
 import qualified Data.HashMap.Strict    as HashMap
 import qualified Data.Set               as Set
 import qualified Data.Text              as Text
+import qualified Data.Text.Lazy         as LText
 import qualified Data.Text.Lazy.Builder as LTBuilder
 import qualified Data.Vector            as Vector
 
@@ -142,7 +146,7 @@ instance Pretty Table where
       ppTableElem ns es = "|" <+> hsep (map (uncurry ppTableCell) (zip ns es))
        where
         ppTableCell :: Int -> Text -> Doc e
-        ppTableCell n c = fill n (text (cs c))
+        ppTableCell n c = fill n (text (Text.unpack c))
 
     ppTableHeaders :: [[Int]] -> [Text] -> Doc e
     ppTableHeaders nss hs = hsep (map (uncurry ppTableHeader) (zip nss hs)) <+> "|"
@@ -210,14 +214,14 @@ instance TableElem (HashMap Text Value) where
       step acc (k, v) = acc <>
         case v of
           Object o ->
-            map (\(k',v') ->
-                  let k'' :: LTBuilder.Builder
-                      k'' = LTBuilder.fromText k
-                         <> LTBuilder.singleton '.'
-                         <> LTBuilder.fromText k'
-                  in (cs (LTBuilder.toLazyText k''), v'))
-                (objectCells o)
-          _ -> pure (k, cs (LTBuilder.toLazyText (showValue v)))
+            fmap (\(k',v') ->
+                   let k'' :: LTBuilder.Builder
+                       k'' = LTBuilder.fromText k
+                          <> LTBuilder.singleton '.'
+                          <> LTBuilder.fromText k'
+                   in (LText.toStrict (LTBuilder.toLazyText k''), v'))
+                 (objectCells o)
+          _ -> pure (k, LText.toStrict (LTBuilder.toLazyText (showValue v)))
 
       -- Show a 'Value' in one line.
       showValue :: Value -> LTBuilder.Builder
@@ -240,8 +244,8 @@ instance TableElem (HashMap Text Value) where
            LTBuilder.singleton '"'
         <> LTBuilder.fromText s
         <> LTBuilder.singleton '"'
-      showValue (Number n) = LTBuilder.fromLazyText (show n)
-      showValue (Bool b)   = LTBuilder.fromLazyText (show b)
+      showValue (Number n) = LTBuilder.fromString (show n)
+      showValue (Bool b)   = LTBuilder.fromString (show b)
       showValue Null       = "null"
 
 

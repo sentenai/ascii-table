@@ -10,7 +10,7 @@ homepage:       https://github.com/Sentenai/data-ascii-table#readme
 bug-reports:    https://github.com/Sentenai/data-ascii-table/issues
 author:         Sentenai
 maintainer:     mitchellwrosen@gmail.com
-copyright:      2016 Sentenai
+copyright:      2016 Sentenai, Inc.
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
@@ -23,14 +23,12 @@ source-repository head
 library
   hs-source-dirs:
       src
-  default-extensions: NoImplicitPrelude
   ghc-options: -Wall
   build-depends:
       aeson
     , base
     , containers
     , dlist
-    , sentenai-prelude
     , text
     , unordered-containers
     , vector
