@@ -37,6 +37,7 @@ module Data.AsciiTable
   , TableSlice
   , TableElem(..)
   , makeTable
+  , escapeTabAndNewline
     -- * Re-exports
   , Doc
   , putDoc
@@ -146,7 +147,7 @@ instance Pretty Table where
       ppTableElem ns es = "|" <+> hsep (map (uncurry ppTableCell) (zip ns es))
        where
         ppTableCell :: Int -> Text -> Doc e
-        ppTableCell n c = fill n (text (Text.unpack c))
+        ppTableCell n c = fill n (text (Text.unpack (escapeTabAndNewline c)))
 
     ppTableHeaders :: [[Int]] -> [Text] -> Doc e
     ppTableHeaders nss hs = hsep (map (uncurry ppTableHeader) (zip nss hs)) <+> "|"
@@ -227,18 +228,24 @@ instance TableElem (HashMap Text Value) where
       showValue :: Value -> LTBuilder.Builder
       showValue (Object o) =
            LTBuilder.singleton '{'
-        <> foldr (\(k,v) acc ->
-                      LTBuilder.fromText k
-                   <> ":"
-                   <> showValue v
-                   <> ", "
-                   <> acc)
-                 mempty
-                 (HashMap.toList o)
+        <> Vector.ifoldr' (\i (k,v) acc ->
+                              LTBuilder.singleton '\"'
+                           <> LTBuilder.fromText k
+                           <> LTBuilder.singleton '\"'
+                           <> ":"
+                           <> showValue v
+                           <> if i == length o - 1
+                              then acc
+                              else ", " <> acc
+                         ) mempty
+                           (Vector.fromList $ HashMap.toList o)
         <> LTBuilder.singleton '}'
       showValue (Array a)  =
            LTBuilder.singleton '['
-        <> Vector.foldr' (\v acc -> showValue v <> ", " <> acc) mempty a
+        <> Vector.ifoldr' (\i v acc -> if i == length a - 1
+                                       then showValue v <> acc
+                                       else showValue v <> ", " <> acc
+                          ) mempty a
         <> LTBuilder.singleton ']'
       showValue (String s) =
            LTBuilder.singleton '"'
@@ -247,6 +254,11 @@ instance TableElem (HashMap Text Value) where
       showValue (Number n) = LTBuilder.fromString (show n)
       showValue (Bool b)   = LTBuilder.fromString (show b)
       showValue Null       = "null"
+
+-- escape a character in 't' if it appears in 'cs'
+escapeTabAndNewline :: Text -> Text
+escapeTabAndNewline t = Text.replace (Text.singleton '\n') "\\n" $
+                        Text.replace (Text.singleton '\t') "\\t" t
 
 
 -- | Make a 'Table' from a list of headers and a list of 'TableSlice's, each of
@@ -283,7 +295,7 @@ makeTable headers slices =
         step :: Set Text -> HashMap Text Text -> Set Text
         step acc x = acc <> Set.fromList (HashMap.keys x)
       in
-          map (Set.toAscList . foldl' step mempty)
+          map (map escapeTabAndNewline . Set.toAscList . foldl' step mempty)
         . transpose
         . concat
         $ elems
