@@ -3,6 +3,34 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- |
+--
+-- Let\'s make a table!
+--
+-- @
+-- > let Just ('Object' o1) = 'Data.Aeson.decode' \"{\\\"foo\\\": \\\"bar\\\"}\"
+-- > let Just ('Object' o2) = 'Data.Aeson.decode' \"{\\\"baz\\\": 5}\"
+-- > let Just ('Object' o3) = 'Data.Aeson.decode' \"{\\\"oink\\\": true}\"
+--
+-- > let slice1 = [[Just o1, Just o3], [Just o2, Nothing]]
+-- > let slice2 = [[Nothing, Just o1]]
+--
+-- > 'pretty' ('makeTable' [\"object 1\", \"object 2\"] [slice1, slice2, slice1])
+-- +-----------+------------+
+-- | object 1  | object 2   |
+-- |           |            |
+-- | baz foo   | foo   oink |
+-- +===========+============+
+-- |     \"bar\" |       True |
+-- | 5.0       |            |
+-- +-----------+------------+
+-- |           | \"bar\"      |
+-- +-----------+------------+
+-- |     \"bar\" |       True |
+-- | 5.0       |            |
+-- +-----------+------------+
+-- @
+
 module Data.AsciiTable
   ( Table
   , TableRow
@@ -70,8 +98,9 @@ import qualified Data.Vector            as Vector
 
 -- | A single horizontal row of a 'Table', containing a list of 'TableElem's.
 -- Each element in the row is visually separated from the next by a vertical
--- line. Each row in the table must contain the same number of elements.
-type TableRow   a = [a]
+-- line. Each row in the table must contain the same number of elements
+-- (however, any number of them can be 'Nothing').
+type TableRow   a = [Maybe a]
 
 -- | A single horizontal slice of a 'Table', containing one or more 'TableRow's.
 -- Each slice is visually separated from the next by a horizontal line.
@@ -83,7 +112,7 @@ type TableSlice a = [TableRow a]
 data Table = Table
   { tableHeaders     :: [Text]
   , tableCellHeaders :: [[Text]]
-  , tableSlices      :: [TableSlice [Text]]
+  , tableSlices      :: [[[[Text]]]]
   } deriving (Eq, Show)
 
 instance Pretty Table where
@@ -100,13 +129,13 @@ instance Pretty Table where
         , vsep (map (ppTableSlice widths) (tableSlices table))
         ]
    where
-    ppTableSlice :: [[Int]] -> TableSlice [Text] -> Doc e
+    ppTableSlice :: [[Int]] -> [[[Text]]] -> Doc e
     ppTableSlice ns rs =
       vsep (map (ppTableRow ns) rs)
       `above`
       tableSliceSep '-' ns
 
-    ppTableRow :: [[Int]] -> TableRow [Text] -> Doc e
+    ppTableRow :: [[Int]] -> [[Text]] -> Doc e
     ppTableRow nss rs = hsep (map (uncurry ppTableElem) (zip nss rs)) <+> "|"
      where
       ppTableElem :: [Int] -> [Text] -> Doc e
@@ -149,7 +178,7 @@ instance Pretty Table where
       in
         map adjust (zip (map Text.length tableHeaders) ws0)
      where
-      unadjustedTableWidths :: [TableRow [Text]] -> [[Int]]
+      unadjustedTableWidths :: [[[Text]]] -> [[Int]]
       unadjustedTableWidths =
           map (map (maximum . map Text.length))
         . map transpose
@@ -255,10 +284,10 @@ makeTable headers slices =
         . concat
         $ elems
 
-    elems :: [TableSlice (HashMap Text Text)]
-    elems = map (map (map tableElemCells)) slices
+    elems :: [[[HashMap Text Text]]]
+    elems = map (map (map (maybe mempty tableElemCells))) slices
 
-    text_elems :: [TableSlice [Text]]
+    text_elems :: [[[[Text]]]]
     text_elems =
       map (map (map (uncurry go))) (map (map (flip zip cell_headers)) elems)
      where
