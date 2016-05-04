@@ -37,7 +37,6 @@ module Data.AsciiTable
   , TableSlice
   , TableElem(..)
   , makeTable
-  , escapeTabAndNewline
     -- * Re-exports
   , Doc
   , putDoc
@@ -255,12 +254,6 @@ instance TableElem (HashMap Text Value) where
       showValue (Bool b)   = LTBuilder.fromString (show b)
       showValue Null       = "null"
 
--- escape a character in 't' if it appears in 'cs'
-escapeTabAndNewline :: Text -> Text
-escapeTabAndNewline t = Text.replace (Text.singleton '\n') "\\n" $
-                        Text.replace (Text.singleton '\t') "\\t" t
-
-
 -- | Make a 'Table' from a list of headers and a list of 'TableSlice's, each of
 -- which contains a list of 'TableRow's, each of which contain a list of
 -- 'TableElem's. It is assumed that all dimensions align properly (e.g. each row
@@ -311,3 +304,10 @@ makeTable headers slices =
       go m = map (\k -> HashMap.lookupDefault "" k m)
   in
     Table headers cell_headers text_elems
+
+
+-- Escape tabs and newlines in a Text
+escapeTabAndNewline :: Text -> Text
+escapeTabAndNewline =
+    Text.replace (Text.singleton '\n') "\\n"
+  . Text.replace (Text.singleton '\t') "\\t"
