@@ -1,8 +1,8 @@
-name: data-ascii-table
+name: ascii-table
 version: 0.1.0.0
 synopsis: ASCII table
 description: ASCII table
-github: Sentenai/data-ascii-table
+github: Sentenai/ascii-table
 license: BSD3
 author: Sentenai
 maintainer: mitchellwrosen@gmail.com

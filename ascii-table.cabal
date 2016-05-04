@@ -2,12 +2,12 @@
 --
 -- see: https://github.com/sol/hpack
 
-name:           data-ascii-table
+name:           ascii-table
 version:        0.1.0.0
 synopsis:       ASCII table
 description:    ASCII table
-homepage:       https://github.com/Sentenai/data-ascii-table#readme
-bug-reports:    https://github.com/Sentenai/data-ascii-table/issues
+homepage:       https://github.com/Sentenai/ascii-table#readme
+bug-reports:    https://github.com/Sentenai/ascii-table/issues
 author:         Sentenai
 maintainer:     mitchellwrosen@gmail.com
 copyright:      2016 Sentenai, Inc.
@@ -18,7 +18,7 @@ cabal-version:  >= 1.10
 
 source-repository head
   type: git
-  location: https://github.com/Sentenai/data-ascii-table
+  location: https://github.com/Sentenai/ascii-table
 
 library
   hs-source-dirs:
