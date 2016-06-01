@@ -1,4 +1,4 @@
--- This file has been generated from package.yaml by hpack version 0.9.0.
+-- This file has been generated from package.yaml by hpack version 0.14.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -6,6 +6,7 @@ name:           ascii-table
 version:        0.1.0.0
 synopsis:       ASCII table
 description:    ASCII table
+category:       Data
 homepage:       https://github.com/Sentenai/ascii-table#readme
 bug-reports:    https://github.com/Sentenai/ascii-table/issues
 author:         Sentenai
@@ -26,7 +27,7 @@ library
   ghc-options: -Wall
   build-depends:
       aeson
-    , base
+    , base >= 4.6 && < 5
     , containers
     , dlist
     , text

@@ -50,12 +50,13 @@ module Data.AsciiTable
   , displayIO
   ) where
 
+import Control.Applicative   (pure)
 import Data.Aeson            (Object, Value(..))
 import Data.DList            (DList)
 import Data.Foldable         (foldl')
 import Data.HashMap.Strict   (HashMap)
 import Data.List             (transpose)
-import Data.Monoid           ((<>))
+import Data.Monoid           ((<>), mempty)
 import Data.Set              (Set)
 import Data.Text             (Text)
 import Text.PrettyPrint.Free hiding ((<>))
@@ -233,7 +234,7 @@ instance TableElem (HashMap Text Value) where
                            <> LTBuilder.singleton '\"'
                            <> ":"
                            <> showValue v
-                           <> if i == length o - 1
+                           <> if i == HashMap.size o - 1
                               then acc
                               else ", " <> acc
                          ) mempty
@@ -241,7 +242,7 @@ instance TableElem (HashMap Text Value) where
         <> LTBuilder.singleton '}'
       showValue (Array a)  =
            LTBuilder.singleton '['
-        <> Vector.ifoldr' (\i v acc -> if i == length a - 1
+        <> Vector.ifoldr' (\i v acc -> if i == Vector.length a - 1
                                        then showValue v <> acc
                                        else showValue v <> ", " <> acc
                           ) mempty a
