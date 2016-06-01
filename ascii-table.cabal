@@ -27,13 +27,13 @@ library
   ghc-options: -Wall
   build-depends:
       aeson
-    , base >= 4.6 && < 5
+    , base                 >= 4.6 && < 5
     , containers
     , dlist
-    , text
+    , text                 >= 0.8
     , unordered-containers
     , vector
-    , wl-pprint-extras
+    , wl-pprint-extras     >= 1.3 && < 3.6
   exposed-modules:
       Data.AsciiTable
   default-language: Haskell2010
