@@ -1,5 +1,5 @@
 name: ascii-table
-version: 0.1.0.0
+version: 0.1.1.0
 synopsis: ASCII table
 description: ASCII table
 category: Data
@@ -16,6 +16,7 @@ dependencies:
   - base                 >= 4.6 && < 5
   - containers
   - dlist
+  - hashable
   - text                 >= 0.8
   - unordered-containers
   - vector

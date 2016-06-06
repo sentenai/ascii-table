@@ -1,7 +1,9 @@
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE LambdaCase             #-}
+{-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE RecordWildCards        #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE ViewPatterns           #-}
 
 -- |
 --
@@ -35,8 +37,11 @@ module Data.AsciiTable
   ( Table
   , TableRow
   , TableSlice
-  , TableElem(..)
   , makeTable
+  , makeTableWith
+    -- * Misc. helper functions
+  , prettyValue
+  , flattenObject
     -- * Re-exports
   , Doc
   , putDoc
@@ -52,21 +57,19 @@ module Data.AsciiTable
 
 import Control.Applicative   (pure)
 import Data.Aeson            (Object, Value(..))
-import Data.DList            (DList)
 import Data.Foldable         (foldl')
+import Data.Hashable         (Hashable)
 import Data.HashMap.Strict   (HashMap)
 import Data.List             (transpose)
+import Data.Maybe            (fromMaybe)
 import Data.Monoid           ((<>), mempty)
 import Data.Set              (Set)
 import Data.Text             (Text)
 import Text.PrettyPrint.Free hiding ((<>))
 
-import qualified Data.DList             as DList
 import qualified Data.HashMap.Strict    as HashMap
 import qualified Data.Set               as Set
 import qualified Data.Text              as Text
-import qualified Data.Text.Lazy         as LText
-import qualified Data.Text.Lazy.Builder as LTBuilder
 import qualified Data.Vector            as Vector
 
 {-
@@ -77,17 +80,17 @@ import qualified Data.Vector            as Vector
    | SliceHdr    | SliceHdr    |
    | CHdr   CHdr |             |
    +=============+=============+========
-   | Cell   Cell | RowSlice    |
-   | Cell   Cell | RowSlice    |
-   | Cell   Cell | RowSlice    |
-   | Cell   Cell | RowSlice    |
+   | TableElem   | TableElem   |
+   | TableElem   | TableElem   |
+   | TableElem   | TableElem   |
+   | TableElem   | TableElem   |
    | ...         | ...
    +------------------------------------
-   | Row
-   | Row
-   | Row
-   | Row
-   | Row
+   | TableRow
+   | TableRow
+   | TableRow
+   | TableRow
+   | TableRow
    | ...
    +-------------+-------------+--------
    | TableSlice
@@ -98,14 +101,12 @@ import qualified Data.Vector            as Vector
    |
    +-------------+-------------+--------
 
-
 -}
 
--- | A single horizontal row of a 'Table', containing a list of 'TableElem's.
--- Each element in the row is visually separated from the next by a vertical
--- line. Each row in the table must contain the same number of elements
--- (however, any number of them can be 'Nothing').
-type TableRow   a = [Maybe a]
+-- | A single horizontal row of a 'Table'. Each row is visually separated from
+-- the next by a vertical line. Each row in the table must contain the same
+-- number of elements (however, any number of them can be 'Nothing').
+type TableRow a = [Maybe a]
 
 -- | A single horizontal slice of a 'Table', containing one or more 'TableRow's.
 -- Each slice is visually separated from the next by a horizontal line.
@@ -141,19 +142,19 @@ instance Pretty Table where
       tableSliceSep '-' ns
 
     ppTableRow :: [[Int]] -> [[Text]] -> Doc e
-    ppTableRow nss rs = hsep (map (uncurry ppTableElem) (zip nss rs)) <+> "|"
+    ppTableRow nss rs = hsep (zipWith ppTableElem nss rs) <+> "|"
      where
       ppTableElem :: [Int] -> [Text] -> Doc e
-      ppTableElem ns es = "|" <+> hsep (map (uncurry ppTableCell) (zip ns es))
+      ppTableElem ns es = "|" <+> hsep (zipWith ppTableCell ns es)
        where
         ppTableCell :: Int -> Text -> Doc e
         ppTableCell n c = fill n (text (Text.unpack (escapeTabAndNewline c)))
 
     ppTableHeaders :: [[Int]] -> [Text] -> Doc e
-    ppTableHeaders nss hs = hsep (map (uncurry ppTableHeader) (zip nss hs)) <+> "|"
+    ppTableHeaders nss hs = hsep (zipWith ppTableHeader nss hs) <+> "|"
      where
       ppTableHeader :: [Int] -> Text -> Doc e
-      ppTableHeader ns h = "|" <+> fill (elemWidth ns) (text (Text.unpack h))
+      ppTableHeader ns h = "|" <+> fill (elemWidth ns) (text (Text.unpack (escapeTabAndNewline h)))
 
     tableSliceSep :: Char -> [[Int]] -> Doc e
     tableSliceSep c = (<> "+") . hcat . map elemSep
@@ -169,8 +170,8 @@ instance Pretty Table where
         ws0 :: [[Int]]
         ws0 = unadjustedTableWidths (tableCellHeaders : concat tableSlices)
 
-        adjust :: (Int, [Int]) -> [Int]
-        adjust (n, ns) =
+        adjust :: Int -> [Int] -> [Int]
+        adjust n ns =
           case unsnoc ns of
             Nothing -> []
             Just (ms, m) ->
@@ -181,12 +182,11 @@ instance Pretty Table where
                    then ms ++ [m + n - len]
                    else ns
       in
-        map adjust (zip (map Text.length tableHeaders) ws0)
+        zipWith adjust (map Text.length tableHeaders) ws0
      where
       unadjustedTableWidths :: [[[Text]]] -> [[Int]]
       unadjustedTableWidths =
-          map (map (maximum . map Text.length))
-        . map transpose
+          map (map (maximum . map Text.length) . transpose)
         . transpose
 
       unsnoc :: [a] -> Maybe ([a], a)
@@ -200,72 +200,22 @@ instance Pretty Table where
     elemWidth = foldr (\x y -> x+y+1) (-1)
 
 
--- | The class of types that correspond to a single element of a 'Table'. An
--- instance for an @aeson@ 'Object' is provided by this library.
-class TableElem a where
-  tableElemCells :: a -> HashMap Text Text
-
-instance TableElem (HashMap Text Value) where
-  tableElemCells obj = HashMap.fromList (DList.toList (objectCells obj))
-   where
-    objectCells :: Object -> DList (Text, Text)
-    objectCells = foldl' step mempty . HashMap.toList
-     where
-      step :: DList (Text, Text) -> (Text, Value) -> DList (Text, Text)
-      step acc (k, v) = acc <>
-        case v of
-          Object o ->
-            fmap (\(k',v') ->
-                   let k'' :: LTBuilder.Builder
-                       k'' = LTBuilder.fromText k
-                          <> LTBuilder.singleton '.'
-                          <> LTBuilder.fromText k'
-                   in (LText.toStrict (LTBuilder.toLazyText k''), v'))
-                 (objectCells o)
-          _ -> pure (k, LText.toStrict (LTBuilder.toLazyText (showValue v)))
-
-      -- Show a 'Value' in one line.
-      showValue :: Value -> LTBuilder.Builder
-      showValue (Object o) =
-           LTBuilder.singleton '{'
-        <> Vector.ifoldr' (\i (k,v) acc ->
-                              LTBuilder.singleton '\"'
-                           <> LTBuilder.fromText k
-                           <> LTBuilder.singleton '\"'
-                           <> ":"
-                           <> showValue v
-                           <> if i == HashMap.size o - 1
-                              then acc
-                              else ", " <> acc
-                         ) mempty
-                           (Vector.fromList $ HashMap.toList o)
-        <> LTBuilder.singleton '}'
-      showValue (Array a)  =
-           LTBuilder.singleton '['
-        <> Vector.ifoldr' (\i v acc -> if i == Vector.length a - 1
-                                       then showValue v <> acc
-                                       else showValue v <> ", " <> acc
-                          ) mempty a
-        <> LTBuilder.singleton ']'
-      showValue (String s) =
-           LTBuilder.singleton '"'
-        <> LTBuilder.fromText s
-        <> LTBuilder.singleton '"'
-      showValue (Number n) = LTBuilder.fromString (show n)
-      showValue (Bool b)   = LTBuilder.fromString (show b)
-      showValue Null       = "null"
-
 -- | Make a 'Table' from a list of headers and a list of 'TableSlice's, each of
 -- which contains a list of 'TableRow's, each of which contain a list of
--- 'TableElem's. It is assumed that all dimensions align properly (e.g. each row
+-- 'Object's. It is assumed that all dimensions align properly (e.g. each row
 -- contains the same number of elements, which is equal to the length of the
 -- list of headers).
+--
+-- Each top-level object is flattened into one column per leaf. Note that this
+-- means it is not possible to distinguish between e.g. @{\"foo\":{\"bar\":5}}@
+-- and @{\"foo.bar\":5}@. Hopefully this is not too much of a problem in
+-- practice.
 --
 -- Each vertically aligned element need not contain the same set of keys; for
 -- example, the table corresponding to
 --
 -- @
--- [ {\"foo\": \"bar\"}, {\"baz\": \"qux\"} ]
+-- [ [{\"foo\": \"bar\"}], [{\"baz\": \"qux\"}] ] -- One 'TableSlice'
 -- @
 --
 -- will simply look like
@@ -280,34 +230,111 @@ instance TableElem (HashMap Text Value) where
 -- @
 --
 -- That is, each missing value is simply not displayed.
-makeTable :: forall a. TableElem a => [Text] -> [TableSlice a] -> Table
+--
+makeTable
+  :: [Text]              -- ^ Headers
+  -> [TableSlice Object] -- ^ Table slices
+  -> Table
 makeTable headers slices =
-  let
-    cell_headers :: [[Text]]
-    cell_headers =
-      let
-        step :: Set Text -> HashMap Text Text -> Set Text
-        step acc x = acc <> Set.fromList (HashMap.keys x)
-      in
-          map (map escapeTabAndNewline . Set.toAscList . foldl' step mempty)
-        . transpose
-        . concat
-        $ elems
+  makeTableWith id (\_ -> id) (\_ _ -> prettyValue) headers (flat slices)
+ where
+  flat :: [TableSlice Object] -> [TableSlice Object]
+  flat = (map . map . map . fmap) flattenObject
 
-    elems :: [[[HashMap Text Text]]]
-    elems = map (map (map (maybe mempty tableElemCells))) slices
+-- | Like 'makeTable', but takes explicit rendering functions. This is useful for
+-- adding ANSI escape codes to color output, or for rendering values depending on
+-- what their key is.
+--
+-- For example, you may wish to render 'String's with a @\"timestamp\"@ key
+-- without quotation marks.
+makeTableWith
+  :: forall h k v.
+     (Ord k, Hashable k)
+  => (h -> Text)                -- ^ Header rendering function
+  -> (h -> k -> Text)           -- ^ Cell header rendering function
+  -> (h -> k -> v -> Text)      -- ^ Cell rendering function
+  -> [h]                        -- ^ Headers
+  -> [TableSlice (HashMap k v)] -- ^ Table slices
+  -> Table
+makeTableWith showH showK showV headers slices =
+  Table headers' cell_headers' slices'
+ where
+  cell_headers :: [[k]]
+  cell_headers =
+      map (Set.toAscList . foldl' step mempty)
+    . transpose
+    . concat
+    $ slices
+   where
+    step :: Set k -> Maybe (HashMap k v) -> Set k
+    step acc Nothing  = acc
+    step acc (Just x) = acc <> Set.fromList (HashMap.keys x)
 
-    text_elems :: [[[[Text]]]]
-    text_elems =
-      map (map (map (uncurry go))) (map (map (flip zip cell_headers)) elems)
-     where
-      go :: HashMap Text Text -> [Text] -> [Text]
-      go m = map (\k -> HashMap.lookupDefault "" k m)
-  in
-    Table headers cell_headers text_elems
+  headers':: [Text]
+  headers' = map showH headers
 
+  cell_headers' :: [[Text]]
+  cell_headers' = zipWith (map . showK) headers cell_headers
 
--- Escape tabs and newlines in a Text
+  slices' :: [[[[Text]]]]
+  slices' =
+    (map . map) (zipWith3 go headers cell_headers) slices
+   where
+    go :: h -> [k] -> Maybe (HashMap k v) -> [Text]
+    go h ks (fromMaybe mempty -> m) =
+      map
+        (\k ->
+          case HashMap.lookup k m of
+            Nothing -> ""
+            Just v  -> showV h k v)
+        ks
+
+-- | Pretty-print a 'Value' in one line.
+prettyValue :: Value -> Text
+prettyValue = \case
+  Object o ->
+    "{"
+    <> Vector.ifoldr'
+      (\i (k,v) acc ->
+        "\""
+        <> k
+        <> "\":"
+        <> prettyValue v
+        <> if i == HashMap.size o - 1
+            then acc
+            else ", " <> acc)
+      mempty
+      (Vector.fromList (HashMap.toList o))
+    <> "}"
+  Array a ->
+    "["
+    <> Vector.ifoldr'
+      (\i v acc ->
+        if i == Vector.length a - 1
+          then prettyValue v <> acc
+          else prettyValue v <> ", " <> acc)
+      mempty
+      a
+    <> "]"
+  String s -> "\"" <> s <> "\""
+  Number n -> Text.pack (show n)
+  Bool b   -> Text.pack (show b)
+  Null     -> "null"
+
+-- | Flatten an 'Object' so that it contains no top-level 'Object' values.
+flattenObject :: Object -> Object
+flattenObject = foldMap go . HashMap.toList
+ where
+  go :: (Text, Value) -> Object
+  go (k, v) =
+    case v of
+      Object o -> HashMap.fromList (map (prependKey k) (HashMap.toList (flattenObject o)))
+      _        -> HashMap.singleton k v
+
+  prependKey :: Text -> (Text, Value) -> (Text, Value)
+  prependKey k0 (k1, v) = (k0 <> "." <> k1, v)
+
+-- | Escape tabs and newlines in a 'Text'.
 escapeTabAndNewline :: Text -> Text
 escapeTabAndNewline =
     Text.replace (Text.singleton '\n') "\\n"
