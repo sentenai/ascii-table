@@ -57,7 +57,7 @@ module Data.AsciiTable
 
 import Control.Applicative   (pure)
 import Data.Aeson            (Object, Value(..))
-import Data.Foldable         (foldl')
+import Data.Foldable         (foldl', foldMap)
 import Data.Hashable         (Hashable)
 import Data.HashMap.Strict   (HashMap)
 import Data.List             (transpose)
