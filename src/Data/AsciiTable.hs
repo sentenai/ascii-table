@@ -64,12 +64,11 @@ import Data.List             (transpose)
 import Data.Maybe            (fromMaybe)
 import Data.Monoid           ((<>), mempty)
 import Data.Set              (Set)
-import Data.Text             (Text)
+import Data.Text             (Text, pack, unpack)
 import Text.PrettyPrint.Free hiding ((<>))
 
 import qualified Data.HashMap.Strict    as HashMap
 import qualified Data.Set               as Set
-import qualified Data.Text              as Text
 import qualified Data.Vector            as Vector
 
 {-
@@ -116,9 +115,9 @@ type TableSlice a = [TableRow a]
 -- Build a table with 'makeTable', and show it with the pretty-printing
 -- functions re-exported from this module.
 data Table = Table
-  { tableHeaders     :: [Text]
-  , tableCellHeaders :: [[Text]]
-  , tableSlices      :: [[[[Text]]]]
+  { tableHeaders     :: [String]
+  , tableCellHeaders :: [[String]]
+  , tableSlices      :: [[[[String]]]]
   } deriving (Eq, Show)
 
 instance Pretty Table where
@@ -135,26 +134,26 @@ instance Pretty Table where
         , vsep (map (ppTableSlice widths) (tableSlices table))
         ]
    where
-    ppTableSlice :: [[Int]] -> [[[Text]]] -> Doc e
+    ppTableSlice :: [[Int]] -> [[[String]]] -> Doc e
     ppTableSlice ns rs =
       vsep (map (ppTableRow ns) rs)
       `above`
       tableSliceSep '-' ns
 
-    ppTableRow :: [[Int]] -> [[Text]] -> Doc e
+    ppTableRow :: [[Int]] -> [[String]] -> Doc e
     ppTableRow nss rs = hsep (zipWith ppTableElem nss rs) <+> "|"
      where
-      ppTableElem :: [Int] -> [Text] -> Doc e
+      ppTableElem :: [Int] -> [String] -> Doc e
       ppTableElem ns es = "|" <+> hsep (zipWith ppTableCell ns es)
        where
-        ppTableCell :: Int -> Text -> Doc e
-        ppTableCell n c = fill n (text (Text.unpack (escapeTabAndNewline c)))
+        ppTableCell :: Int -> String -> Doc e
+        ppTableCell n c = fill n (text (escapeTabAndNewline c))
 
-    ppTableHeaders :: [[Int]] -> [Text] -> Doc e
+    ppTableHeaders :: [[Int]] -> [String] -> Doc e
     ppTableHeaders nss hs = hsep (zipWith ppTableHeader nss hs) <+> "|"
      where
-      ppTableHeader :: [Int] -> Text -> Doc e
-      ppTableHeader ns h = "|" <+> fill (elemWidth ns) (text (Text.unpack (escapeTabAndNewline h)))
+      ppTableHeader :: [Int] -> String -> Doc e
+      ppTableHeader ns h = "|" <+> fill (elemWidth ns) (text (escapeTabAndNewline h))
 
     tableSliceSep :: Char -> [[Int]] -> Doc e
     tableSliceSep c = (<> "+") . hcat . map elemSep
@@ -182,11 +181,11 @@ instance Pretty Table where
                    then ms ++ [m + n - len]
                    else ns
       in
-        zipWith adjust (map Text.length tableHeaders) ws0
+        zipWith adjust (map length tableHeaders) ws0
      where
-      unadjustedTableWidths :: [[[Text]]] -> [[Int]]
+      unadjustedTableWidths :: [[[String]]] -> [[Int]]
       unadjustedTableWidths =
-          map (map (maximum . map Text.length) . transpose)
+          map (map (maximum . map length) . transpose)
         . transpose
 
       unsnoc :: [a] -> Maybe ([a], a)
@@ -232,13 +231,13 @@ instance Pretty Table where
 -- That is, each missing value is simply not displayed.
 --
 makeTable
-  :: [Text]              -- ^ Headers
+  :: [String]            -- ^ Headers
   -> [TableSlice Object] -- ^ Table slices
   -> Table
 makeTable headers slices =
   makeTableWith
     (\_ -> id)
-    (\_ _ _ -> id)
+    (\_ _ _ -> unpack)
     (\_ _ _ _ -> prettyValue)
     headers
     (flat slices)
@@ -250,8 +249,8 @@ makeTable headers slices =
 -- adding ANSI escape codes to color output, or for rendering values depending on
 -- what their key is.
 --
--- For example, you may wish to render 'String's with a @\"timestamp\"@ key
--- without quotation marks.
+-- For example, you may wish to render 'Data.Aeson.String's with a
+-- @\"timestamp\"@ key without quotation marks.
 --
 -- The @Int@ argument is the header's index. The @(Int, Int)@ argument is the
 -- @(absolute, relative)@ index of the key and value. Visually,
@@ -267,14 +266,17 @@ makeTable headers slices =
 -- +-------------+-------------+
 -- @
 --
+-- This function is (unfortunately) 'String'-based as of /0.3.0.0/, because the
+-- pretty printing and ANSI escape code functions are 'String'-based, too.
+--
 makeTableWith
   :: forall header key value.
      (Ord key, Hashable key)
-  => (Int -> header -> Text)                               -- ^ Header rendering function
-  -> (Int -> header -> (Int, Int) -> key -> Text)          -- ^ Cell header rendering function
-  -> (Int -> header -> (Int, Int) -> key -> value -> Text) -- ^ Cell rendering function
-  -> [header]                                              -- ^ Headers
-  -> [TableSlice (HashMap key value)]                      -- ^ Table slices
+  => (Int -> header -> String)                               -- ^ Header rendering function
+  -> (Int -> header -> (Int, Int) -> key -> String)          -- ^ Cell header rendering function
+  -> (Int -> header -> (Int, Int) -> key -> value -> String) -- ^ Cell rendering function
+  -> [header]                                                -- ^ Headers
+  -> [TableSlice (HashMap key value)]                        -- ^ Table slices
   -> Table
 makeTableWith showH showK showV headers slices =
   Table headers' cell_headers' slices'
@@ -290,10 +292,10 @@ makeTableWith showH showK showV headers slices =
     step acc Nothing  = acc
     step acc (Just x) = acc <> Set.fromList (HashMap.keys x)
 
-  headers':: [Text]
+  headers':: [String]
   headers' = zipWith showH [0..] headers
 
-  cell_headers' :: [[Text]]
+  cell_headers' :: [[String]]
   cell_headers' =
     zipWith3
       (\i h -> zipWith (\r (a,k) -> showK i h (a,r) k) [0..])
@@ -301,11 +303,11 @@ makeTableWith showH showK showV headers slices =
       headers
       (tag cell_headers)
 
-  slices' :: [[[[Text]]]]
+  slices' :: [[[[String]]]]
   slices' =
     (map . map) (zipWith4 go [0..] headers (tag cell_headers)) slices
    where
-    go :: Int -> header -> [(Int, key)] -> Maybe (HashMap key value) -> [Text]
+    go :: Int -> header -> [(Int, key)] -> Maybe (HashMap key value) -> [String]
     go i h ks (fromMaybe mempty -> m) =
       zipWith
         (\r (a,k) ->
@@ -328,36 +330,39 @@ makeTableWith showH showK showV headers slices =
         (y:ys) -> go (n+1) acc0 ((n,y) : acc1) (ys:xss)
 
 -- | Pretty-print a 'Value' in one line.
-prettyValue :: Value -> Text
-prettyValue = \case
-  Object o ->
-    "{"
-    <> Vector.ifoldr'
-      (\i (k,v) acc ->
-        "\""
-        <> k
-        <> "\":"
-        <> prettyValue v
-        <> if i == HashMap.size o - 1
-            then acc
-            else ", " <> acc)
-      mempty
-      (Vector.fromList (HashMap.toList o))
-    <> "}"
-  Array a ->
-    "["
-    <> Vector.ifoldr'
-      (\i v acc ->
-        if i == Vector.length a - 1
-          then prettyValue v <> acc
-          else prettyValue v <> ", " <> acc)
-      mempty
-      a
-    <> "]"
-  String s -> "\"" <> s <> "\""
-  Number n -> Text.pack (show n)
-  Bool b   -> Text.pack (show b)
-  Null     -> "null"
+prettyValue :: Value -> String
+prettyValue = unpack . prettyValue'
+ where
+  prettyValue' :: Value -> Text
+  prettyValue' = \case
+    Object o ->
+      "{"
+      <> Vector.ifoldr'
+        (\i (k,v) acc ->
+          "\""
+          <> k
+          <> "\":"
+          <> prettyValue' v
+          <> if i == HashMap.size o - 1
+              then acc
+              else ", " <> acc)
+        mempty
+        (Vector.fromList (HashMap.toList o))
+      <> "}"
+    Array a ->
+      "["
+      <> Vector.ifoldr'
+        (\i v acc ->
+          if i == Vector.length a - 1
+            then prettyValue' v <> acc
+            else prettyValue' v <> ", " <> acc)
+        mempty
+        a
+      <> "]"
+    String s -> "\"" <> s <> "\""
+    Number n -> pack (show n)
+    Bool b   -> pack (show b)
+    Null     -> "null"
 
 -- | Flatten an 'Object' so that it contains no top-level 'Object' values.
 flattenObject :: Object -> Object
@@ -372,11 +377,12 @@ flattenObject = foldMap go . HashMap.toList
   prependKey :: Text -> (Text, Value) -> (Text, Value)
   prependKey k0 (k1, v) = (k0 <> "." <> k1, v)
 
--- | Escape tabs and newlines in a 'Text'.
-escapeTabAndNewline :: Text -> Text
-escapeTabAndNewline =
-    Text.replace (Text.singleton '\n') "\\n"
-  . Text.replace (Text.singleton '\t') "\\t"
+-- | Escape tabs and newlines in a 'String'.
+escapeTabAndNewline :: String -> String
+escapeTabAndNewline = replace '\n' "\\n" . replace '\t' "\\t"
+ where
+  replace :: Char -> String -> String -> String
+  replace c s = concatMap (\c' -> if c == c' then s else [c'])
 
 zipWith4 :: (a -> b -> c -> d -> e) -> [a] -> [b] -> [c] -> [d] -> [e]
 zipWith4 f (a:as) (b:bs) (c:cs) (d:ds) = f a b c d : zipWith4 f as bs cs ds
