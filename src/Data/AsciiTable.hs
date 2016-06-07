@@ -57,6 +57,7 @@ module Data.AsciiTable
 
 import Control.Applicative   (pure)
 import Data.Aeson            (Object, Value(..))
+import Data.Char             (isPrint)
 import Data.Foldable         (foldl', foldMap)
 import Data.Hashable         (Hashable)
 import Data.HashMap.Strict   (HashMap)
@@ -65,11 +66,12 @@ import Data.Maybe            (fromMaybe)
 import Data.Monoid           ((<>), mempty)
 import Data.Set              (Set)
 import Data.Text             (Text, pack, unpack)
-import Text.PrettyPrint.Free hiding ((<>))
+import Text.PrettyPrint.Free hiding ((<>), text)
 
-import qualified Data.HashMap.Strict    as HashMap
-import qualified Data.Set               as Set
-import qualified Data.Vector            as Vector
+import qualified Data.HashMap.Strict            as HashMap
+import qualified Data.Set                       as Set
+import qualified Data.Vector                    as Vector
+import qualified Text.PrettyPrint.Free.Internal as PrettyPrint
 
 {-
 
@@ -181,11 +183,11 @@ instance Pretty Table where
                    then ms ++ [m + n - len]
                    else ns
       in
-        zipWith adjust (map length tableHeaders) ws0
+        zipWith adjust (map printableLength tableHeaders) ws0
      where
       unadjustedTableWidths :: [[[String]]] -> [[Int]]
       unadjustedTableWidths =
-          map (map (maximum . map length) . transpose)
+          map (map (maximum . map printableLength) . transpose)
         . transpose
 
       unsnoc :: [a] -> Maybe ([a], a)
@@ -195,8 +197,40 @@ instance Pretty Table where
         (ys,y) <- unsnoc xs
         pure (x:ys,y)
 
+      -- Very primitive length counter that simply ignores ASNI color escape
+      -- sequences, and then ignores non-printable characters.
+      --
+      -- For simplicity, assume that what follows "\ESC[" is an ANSI color
+      -- escape sequence, and this function is probably broken if it isn't.
+      printableLength :: String -> Int
+      printableLength = length . filter isPrint . filterAnsiColor
+
     elemWidth :: [Int] -> Int
     elemWidth = foldr (\x y -> x+y+1) (-1)
+
+    -- Escape tabs and newlines in a 'String'.
+    escapeTabAndNewline :: String -> String
+    escapeTabAndNewline = replace '\n' "\\n" . replace '\t' "\\t"
+     where
+      replace :: Char -> String -> String -> String
+      replace c s = concatMap (\c' -> if c == c' then s else [c'])
+
+    -- | Like text, but consider the length of the string after its ANSI color
+    -- escape codes and unprintable characters have been filtered out.
+    text :: String -> Doc e
+    text s = PrettyPrint.Text (length s') s
+     where
+      s' = filter isPrint (filterAnsiColor s)
+
+    filterAnsiColor :: String -> String
+    filterAnsiColor "" = ""
+    filterAnsiColor ('\ESC' : '[' : xs) =
+      filterAnsiColor (safeTail (dropWhile (/= 'm') xs))
+    filterAnsiColor (x:xs) = x : filterAnsiColor xs
+
+    safeTail :: [a] -> [a]
+    safeTail [] = []
+    safeTail (_:xs) = xs
 
 
 -- | Make a 'Table' from a list of headers and a list of 'TableSlice's, each of
@@ -214,7 +248,7 @@ instance Pretty Table where
 -- example, the table corresponding to
 --
 -- @
--- [ [{\"foo\": \"bar\"}], [{\"baz\": \"qux\"}] ] -- One 'TableSlice'
+-- [ [{\"foo\": \"bar\"}], [{\"baz\": \"qux\"}] ] -- one 'TableSlice'
 -- @
 --
 -- will simply look like
@@ -329,6 +363,7 @@ makeTableWith showH showK showV headers slices =
         []     -> go n (acc1 : acc0) [] xss
         (y:ys) -> go (n+1) acc0 ((n,y) : acc1) (ys:xss)
 
+
 -- | Pretty-print a 'Value' in one line.
 prettyValue :: Value -> String
 prettyValue = unpack . prettyValue'
@@ -377,12 +412,6 @@ flattenObject = foldMap go . HashMap.toList
   prependKey :: Text -> (Text, Value) -> (Text, Value)
   prependKey k0 (k1, v) = (k0 <> "." <> k1, v)
 
--- | Escape tabs and newlines in a 'String'.
-escapeTabAndNewline :: String -> String
-escapeTabAndNewline = replace '\n' "\\n" . replace '\t' "\\t"
- where
-  replace :: Char -> String -> String -> String
-  replace c s = concatMap (\c' -> if c == c' then s else [c'])
 
 zipWith4 :: (a -> b -> c -> d -> e) -> [a] -> [b] -> [c] -> [d] -> [e]
 zipWith4 f (a:as) (b:bs) (c:cs) (d:ds) = f a b c d : zipWith4 f as bs cs ds

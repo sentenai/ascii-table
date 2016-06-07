@@ -3,7 +3,7 @@
 -- see: https://github.com/sol/hpack
 
 name:           ascii-table
-version:        0.2.0.0
+version:        0.3.0.0
 synopsis:       ASCII table
 description:    ASCII table
 category:       Data
@@ -31,7 +31,7 @@ library
     , containers
     , dlist
     , hashable
-    , text                 >= 0.8
+    , text
     , unordered-containers
     , vector
     , wl-pprint-extras     >= 1.3 && < 3.6
