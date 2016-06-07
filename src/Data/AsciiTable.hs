@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE BangPatterns           #-}
 {-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE RecordWildCards        #-}
@@ -236,7 +236,12 @@ makeTable
   -> [TableSlice Object] -- ^ Table slices
   -> Table
 makeTable headers slices =
-  makeTableWith id (\_ -> id) (\_ _ -> prettyValue) headers (flat slices)
+  makeTableWith
+    (\_ -> id)
+    (\_ _ _ -> id)
+    (\_ _ _ _ -> prettyValue)
+    headers
+    (flat slices)
  where
   flat :: [TableSlice Object] -> [TableSlice Object]
   flat = (map . map . map . fmap) flattenObject
@@ -247,47 +252,80 @@ makeTable headers slices =
 --
 -- For example, you may wish to render 'String's with a @\"timestamp\"@ key
 -- without quotation marks.
+--
+-- The @Int@ argument is the header's index. The @(Int, Int)@ argument is the
+-- @(absolute, relative)@ index of the key and value. Visually,
+--
+-- @
+-- +-------------+-------------+
+-- | 0           | 1           |
+-- |             |             |
+-- | (0,0) (1,1) | (2,0) (3,1) |
+-- +=============+=============+
+-- | (0,0) (1,1) | (2,0) (3,1) |
+-- | (0,0) (1,1) | (2,0) (3,1) |
+-- +-------------+-------------+
+-- @
+--
 makeTableWith
-  :: forall h k v.
-     (Ord k, Hashable k)
-  => (h -> Text)                -- ^ Header rendering function
-  -> (h -> k -> Text)           -- ^ Cell header rendering function
-  -> (h -> k -> v -> Text)      -- ^ Cell rendering function
-  -> [h]                        -- ^ Headers
-  -> [TableSlice (HashMap k v)] -- ^ Table slices
+  :: forall header key value.
+     (Ord key, Hashable key)
+  => (Int -> header -> Text)                               -- ^ Header rendering function
+  -> (Int -> header -> (Int, Int) -> key -> Text)          -- ^ Cell header rendering function
+  -> (Int -> header -> (Int, Int) -> key -> value -> Text) -- ^ Cell rendering function
+  -> [header]                                              -- ^ Headers
+  -> [TableSlice (HashMap key value)]                      -- ^ Table slices
   -> Table
 makeTableWith showH showK showV headers slices =
   Table headers' cell_headers' slices'
  where
-  cell_headers :: [[k]]
+  cell_headers :: [[key]]
   cell_headers =
       map (Set.toAscList . foldl' step mempty)
     . transpose
     . concat
     $ slices
    where
-    step :: Set k -> Maybe (HashMap k v) -> Set k
+    step :: Set key -> Maybe (HashMap key value) -> Set key
     step acc Nothing  = acc
     step acc (Just x) = acc <> Set.fromList (HashMap.keys x)
 
   headers':: [Text]
-  headers' = map showH headers
+  headers' = zipWith showH [0..] headers
 
   cell_headers' :: [[Text]]
-  cell_headers' = zipWith (map . showK) headers cell_headers
+  cell_headers' =
+    zipWith3
+      (\i h -> zipWith (\r (a,k) -> showK i h (a,r) k) [0..])
+      [0..]
+      headers
+      (tag cell_headers)
 
   slices' :: [[[[Text]]]]
   slices' =
-    (map . map) (zipWith3 go headers cell_headers) slices
+    (map . map) (zipWith4 go [0..] headers (tag cell_headers)) slices
    where
-    go :: h -> [k] -> Maybe (HashMap k v) -> [Text]
-    go h ks (fromMaybe mempty -> m) =
-      map
-        (\k ->
+    go :: Int -> header -> [(Int, key)] -> Maybe (HashMap key value) -> [Text]
+    go i h ks (fromMaybe mempty -> m) =
+      zipWith
+        (\r (a,k) ->
           case HashMap.lookup k m of
             Nothing -> ""
-            Just v  -> showV h k v)
+            Just v  -> showV i h (a,r) k v)
+        [0..]
         ks
+
+  -- Tag each element in a list of lists with its absolute index.
+  --
+  -- tag [[a,b,c],[d,e],[],[f]] = [[(0,a),(1,b),(2,c)],[(3,d),(4,e)],[],[(5,f)]]
+  tag :: [[a]] -> [[(Int, a)]]
+  tag = go 0 [] []
+    where
+    go _ acc0 acc1 [] = reverse (map reverse (acc1 : acc0))
+    go !n acc0 acc1 (xs:xss) =
+      case xs of
+        []     -> go n (acc1 : acc0) [] xss
+        (y:ys) -> go (n+1) acc0 ((n,y) : acc1) (ys:xss)
 
 -- | Pretty-print a 'Value' in one line.
 prettyValue :: Value -> Text
@@ -339,3 +377,7 @@ escapeTabAndNewline :: Text -> Text
 escapeTabAndNewline =
     Text.replace (Text.singleton '\n') "\\n"
   . Text.replace (Text.singleton '\t') "\\t"
+
+zipWith4 :: (a -> b -> c -> d -> e) -> [a] -> [b] -> [c] -> [d] -> [e]
+zipWith4 f (a:as) (b:bs) (c:cs) (d:ds) = f a b c d : zipWith4 f as bs cs ds
+zipWith4 _ _ _ _ _ = []
