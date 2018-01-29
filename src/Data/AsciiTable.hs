@@ -1,9 +1,8 @@
-{-# LANGUAGE BangPatterns           #-}
-{-# LANGUAGE LambdaCase             #-}
-{-# LANGUAGE OverloadedStrings      #-}
-{-# LANGUAGE RecordWildCards        #-}
-{-# LANGUAGE ScopedTypeVariables    #-}
-{-# LANGUAGE ViewPatterns           #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 -- |
 --
@@ -369,35 +368,36 @@ prettyValue :: Value -> String
 prettyValue = unpack . prettyValue'
  where
   prettyValue' :: Value -> Text
-  prettyValue' = \case
-    Object o ->
-      "{"
-      <> Vector.ifoldr'
-        (\i (k,v) acc ->
-          "\""
-          <> k
-          <> "\":"
-          <> prettyValue' v
-          <> if i == HashMap.size o - 1
-              then acc
-              else ", " <> acc)
-        mempty
-        (Vector.fromList (HashMap.toList o))
-      <> "}"
-    Array a ->
-      "["
-      <> Vector.ifoldr'
-        (\i v acc ->
-          if i == Vector.length a - 1
-            then prettyValue' v <> acc
-            else prettyValue' v <> ", " <> acc)
-        mempty
-        a
-      <> "]"
-    String s -> "\"" <> s <> "\""
-    Number n -> pack (show n)
-    Bool b   -> pack (show b)
-    Null     -> "null"
+  prettyValue' value =
+    case value of
+      Object o ->
+        "{"
+        <> Vector.ifoldr'
+          (\i (k,v) acc ->
+            "\""
+            <> k
+            <> "\":"
+            <> prettyValue' v
+            <> if i == HashMap.size o - 1
+                then acc
+                else ", " <> acc)
+          mempty
+          (Vector.fromList (HashMap.toList o))
+        <> "}"
+      Array a ->
+        "["
+        <> Vector.ifoldr'
+          (\i v acc ->
+            if i == Vector.length a - 1
+              then prettyValue' v <> acc
+              else prettyValue' v <> ", " <> acc)
+          mempty
+          a
+        <> "]"
+      String s -> "\"" <> s <> "\""
+      Number n -> pack (show n)
+      Bool b   -> pack (show b)
+      Null     -> "null"
 
 -- | Flatten an 'Object' so that it contains no top-level 'Object' values.
 flattenObject :: Object -> Object
